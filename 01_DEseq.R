@@ -21,6 +21,7 @@ library("vsn")
 library("RColorBrewer")
 library("gtable")
 library("ggplot2")
+library("dplyr")
 
 
 # Define your file path for saving the plots
@@ -101,7 +102,7 @@ mean_count <- counts_df %>%
   group_by(gene.id, condition) %>%
   summarise(mean.count = mean(count), .groups = "drop") %>%
   arrange(desc(mean.count))  # reorder by highest mean.count
-#105,835 rows, divide by 5 b/c we have 5 conditons (control is its own condition), and we get 21,167 genes, which matches the final list generated in DEseq analysis
+#105,835 rows, divide by 5 b/c we have 5 conditions (control is its own condition), and we get 21,167 genes, which matches the final list generated in DEseq analysis
 
 # View the result
 print(mean_count)
@@ -119,7 +120,7 @@ dds_filt$condition <- relevel(dds_filt$condition, ref = "control")
 #reorder the conditions so it's control, half freeze, full freeze, half, thaw, full thaw
 dds_filt$condition <- factor(dds_filt$condition, levels = c("control", "half_freeze", "full_freeze", "half_thaw", "full_thaw"))
 
-dds_results <- DESeq(dds_filt)
+dds_results <- DESeq(dds_filt) 
 
 
 ### Final method to filter and extract results ----
@@ -180,7 +181,7 @@ deg_list_12.21 <- process_comparisons(dds_results, comparisons)
 write.csv(deg_list_12.21, "/gpfs/gibbs/project/skelly/yaa23/RNA_seq_RASY/from_scratch_grace2/final_output/deg_list_12.21.csv",  row.names=FALSE)
 
 #figure out how many rows are duplicates
-duplicate_count <- sum(duplicated(deg_list_12_21$gene.id))
+duplicate_count <- sum(duplicated(deg_list_12.21$gene.id))
 #81 duplicates
 
 
@@ -325,8 +326,6 @@ plotCounts(dds_results, gene="MSTRG.25435", intgroup="condition")
 #rlog: regularized logarithm 
 #Both transformations produce transformed data on the log2 scale which has been normalized with respect to library size or other normalization factors
 
-#The point of these two transformations, the VST and the rlog, is to remove the dependence of the variance on the mean, particularly the high variance of the logarithm of count data when the mean is low. Both VST and rlog use the experiment-wide trend of variance over mean, in order to transform the data to remove the experiment-wide trend.
-
 #The rlog and VST have similar properties, but the rlog requires fitting a shrinkage term for each sample and each gene which takes time
 
 # Effect of transformation on the variance
@@ -464,14 +463,13 @@ pca_plot_ntd <- ggplot(pca_data_ntd, aes(x = PC1, y = PC2, color = condition)) +
   xlab(paste0("PC1: ",percentVar_ntd[1],"% variance")) +
   ylab(paste0("PC2: ",percentVar_ntd[2],"% variance")) +
   theme(
-    axis.title = element_text(size = 16),       # Increase axis title font size
-    axis.text = element_text(size = 14),        # Increase axis text font size
-    legend.text = element_text(size = 14),      # Increase legend text font size
-    legend.title = element_text(size = 16),     # Increase legend title font size
-    plot.title = element_text(size = 18)        # Increase plot title font size
+    axis.title = element_text(size = 16),   
+    axis.text = element_text(size = 14),    
+    legend.text = element_text(size = 14),  
+    legend.title = element_text(size = 16), 
+    plot.title = element_text(size = 18)    
   )
 pca_plot_ntd
-# Save each plot as a PDF
 ggsave(file.path(save_path, "pca_plot_ntd.pdf"), plot = pca_plot_ntd, width = 8, height = 6)
 
 
@@ -487,11 +485,11 @@ pca_plot_vsd <- ggplot(pca_data_vsd, aes(x = PC1, y = PC2, color = condition)) +
   xlab(paste0("PC1: ",percentVar_vsd[1],"% variance")) +
   ylab(paste0("PC2: ",percentVar_vsd[2],"% variance")) +
   theme(
-    axis.title = element_text(size = 16),       # Increase axis title font size
-    axis.text = element_text(size = 14),        # Increase axis text font size
-    legend.text = element_text(size = 14),      # Increase legend text font size
-    legend.title = element_text(size = 16),     # Increase legend title font size
-    plot.title = element_text(size = 18)        # Increase plot title font size
+    axis.title = element_text(size = 16),       
+    axis.text = element_text(size = 14),        
+    legend.text = element_text(size = 14),      
+    legend.title = element_text(size = 16),     
+    plot.title = element_text(size = 18)        
   )
 pca_plot_vsd
 ggsave(file.path(save_path, "pca_plot_vsd.pdf"), plot = pca_plot_vsd, width = 8, height = 6)
@@ -509,13 +507,212 @@ pca_plot_rld <- ggplot(pca_data_rld, aes(x = PC1, y = PC2, color = condition)) +
   xlab(paste0("PC1: ",percentVar_rld[1],"% variance")) +
   ylab(paste0("PC2: ",percentVar_rld[2],"% variance")) +
   theme(
-    axis.title = element_text(size = 16),       # Increase axis title font size
-    axis.text = element_text(size = 14),        # Increase axis text font size
-    legend.text = element_text(size = 14),      # Increase legend text font size
-    legend.title = element_text(size = 16),     # Increase legend title font size
-    plot.title = element_text(size = 18)        # Increase plot title font size
-  )
+    axis.title = element_text(size = 16),        
+    axis.text = element_text(size = 14),         
+    legend.text = element_text(size = 14),       
+    legend.title = element_text(size = 16),      
+    plot.title = element_text(size = 18)           
+    )
 pca_plot_rld
 ggsave(file.path(save_path, "pca_plot_rld.pdf"), plot = pca_plot_rld, width = 8, height = 6)
 
 
+## for ms: PCA plot with K-means clustering of count data ----
+
+## Plot code adapted from G Vaziri
+
+# Variance-stabilizing transformation
+vsd <- vst(dds_results, blind = FALSE)
+
+# Now plot by PCs, make sure to edit the ylim and xlim for each plot depending on the range of each PC
+
+# Plot PC1 and PC2
+pca_dat <- plotPCA(vsd, returnData = TRUE, intgroup = c("condition"), pcsToUse = 1:2)
+# Run k-means clustering on the two PCs 
+kmeans_res <- kmeans(pca_dat[, c("PC1", "PC2")], centers = 5) 
+pca_dat$cluster <- factor(kmeans_res$cluster)
+
+#edit the names of the conditions to generate legend correctly for the plot (edit the words "half" to "partial", captialize)
+pca_dat <-  pca_dat %>% mutate(condition = recode(condition, "half_freeze" = "Partial-freeze", "full_freeze" = "Full-freeze", "half_thaw" = "Partial-thaw","full_thaw" = "Full-thaw", "control" = "Control"))
+
+# Custom palette for my conditions
+cond_colors <- c(
+  "Control" = "grey",
+  "Partial-freeze" = "#440154",
+  "Full-freeze" = "#21918c", 
+  "Partial-thaw" = "#1F65CC",
+  "Full-thaw" = "#fde725"
+)
+
+p <- ggplot(pca_dat, aes(x = PC1, y = PC2)) +
+  geom_point(aes(color = condition), size = 3.5) +
+  scale_color_manual(values = cond_colors) +
+  
+  ggforce::geom_mark_ellipse(aes(group = cluster),
+                             color = "black",
+                             fill = NA,
+                             expand = unit(8, "mm"),
+                             show.legend = FALSE) +
+  
+  xlab(paste0("PC1: ", round(attr(pca_dat, "percentVar")[1] * 100, 2), "% variance")) +
+  ylab(paste0("PC2: ", round(attr(pca_dat, "percentVar")[2] * 100, 2), "% variance")) +
+  ylim(-20, 22) +
+  xlim(-70, 25) +
+  theme_minimal(base_size = 16) +
+  theme(
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 18),        
+    legend.text = element_text(size = 16),      
+    legend.title = element_blank(),
+    legend.position = "right",
+    panel.grid = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, size = 0.5)
+  )
+
+p
+#Save the plot
+ggsave("pca_kmeans_PC1_PC2.pdf", plot = p, path = "/gpfs/gibbs/project/skelly/yaa23/RNA_seq_RASY/from_scratch_grace2/plots2", width = 12, height = 10)
+
+
+## Plot PC2 and PC3
+# PCA data 
+pca_dat <- plotPCA(vsd, returnData = TRUE, intgroup = c("condition"), pcsToUse = 2:3)
+
+# Run k-means clustering on the first two PCs 
+kmeans_res <- kmeans(pca_dat[, c("PC2", "PC3")], centers = 5) 
+pca_dat$cluster <- factor(kmeans_res$cluster)
+
+#edit the names of the conditions to generate legend correctly for the plot (edit the words "half" to "partial", captialize)
+pca_dat <-  pca_dat %>% mutate(condition = recode(condition, "half_freeze" = "Partial-freeze", "full_freeze" = "Full-freeze", "half_thaw" = "Partial-thaw","full_thaw" = "Full-thaw", "control" = "Control"))
+
+# Custom palette for my conditions
+cond_colors <- c(
+  "Control" = "grey",
+  "Partial-freeze" = "#440154",
+  "Full-freeze" = "#21918c", 
+  "Partial-thaw" = "#1F65CC",
+  "Full-thaw" = "#fde725"
+)
+
+p <- ggplot(pca_dat, aes(x = PC2, y = PC3)) +
+  geom_point(aes(color = condition), size = 3.5) +
+  scale_color_manual(values = cond_colors) +
+  
+  ggforce::geom_mark_ellipse(aes(group = cluster),
+                             color = "black",
+                             fill = NA,
+                             expand = unit(5.5, "mm"),
+                             show.legend = FALSE) +
+  
+  xlab(paste0("PC2: ", round(attr(pca_dat, "percentVar")[1] * 100, 2), "% variance")) +
+  ylab(paste0("PC3: ", round(attr(pca_dat, "percentVar")[2] * 100, 2), "% variance")) +
+  ylim(-25, 28) +
+  xlim(-25, 28) +
+  theme_minimal(base_size = 16) +
+  theme(
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 18),        
+    legend.text = element_text(size = 16),      
+    legend.title = element_blank(),
+    legend.position = "right",
+    panel.grid = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, size = 0.5)
+  )
+
+p
+
+#save the plot
+ggsave("pca_kmeans_PC2_PC3.pdf", plot = p, path = "/gpfs/gibbs/project/skelly/yaa23/RNA_seq_RASY/from_scratch_grace2/plots2", width = 12, height = 10)
+
+
+#Plot PC1 and PC3
+pca_dat <- plotPCA(vsd, returnData = TRUE, intgroup = c("condition"), pcsToUse = c(1,3))
+# Run k-means clustering 
+kmeans_res <- kmeans(pca_dat[, c("PC1", "PC3")], centers = 5) 
+pca_dat$cluster <- factor(kmeans_res$cluster)
+#edit the names of the conditions to generate legend correctly for the plot (edit the words "half" to "partial", captialize)
+pca_dat <-  pca_dat %>% mutate(condition = recode(condition, "half_freeze" = "Partial-freeze", "full_freeze" = "Full-freeze", "half_thaw" = "Partial-thaw","full_thaw" = "Full-thaw", "control" = "Control"))
+
+# Custom palette for my conditions
+cond_colors <- c(
+  "Control" = "grey",
+  "Partial-freeze" = "#440154",
+  "Full-freeze" = "#21918c", 
+  "Partial-thaw" = "#1F65CC",
+  "Full-thaw" = "#fde725"
+)
+
+p <- ggplot(pca_dat, aes(x = PC1, y = PC3)) +
+  geom_point(aes(color = condition), size = 3.5) +
+  scale_color_manual(values = cond_colors) +
+  
+  #ggforce::geom_mark_ellipse(
+  #  aes(group = cluster, linetype = cluster),
+  #  color = "black",
+  #  fill = NA,
+  #  expand = unit(4, "mm")
+  #) +
+  
+  xlab(paste0("PC1: ", round(attr(pca_dat, "percentVar")[1] * 100, 2), "% variance")) +
+  ylab(paste0("PC3: ", round(attr(pca_dat, "percentVar")[2] * 100, 2), "% variance")) +
+  ylim(-22, 22) +
+  xlim(-70, 25) +
+  theme_minimal(base_size = 16) +
+  theme(
+    axis.title = element_text(size = 18),
+    axis.text = element_text(size = 18),        
+    legend.text = element_text(size = 16),      
+    legend.title = element_blank(),
+    legend.position = "right",
+    panel.grid = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, size = 0.5)
+  )
+
+p
+
+#save the plot
+ggsave("pca_nok_PC1_PC3.pdf", plot = p, path = "/gpfs/gibbs/project/skelly/yaa23/RNA_seq_RASY/from_scratch_grace2/plots2", width = 12, height = 10)
+
+## for ms: identify top loading genes for each axis ----
+
+# get VST expression matrix
+vsd_mat <- assay(vsd)    
+vsd_mat <- t(vsd_mat) #transpose so each sample is a row
+
+# run PCA using prcomp
+pca_res <- prcomp(vsd_mat, scale. = TRUE)
+
+# get the PCA loadings
+loadings <- pca_res$rotation
+
+# get the top 15 loading genes for each, choose 15 top genes to match the "top 15 by highest count" in the ms
+get_top_genes <- function(loadings, pc, n = 15){
+  vals <- loadings[, pc]
+  ord <- order(abs(vals), decreasing = TRUE) #make sure it's absolute value
+  data.frame(
+    gene = rownames(loadings)[ord][1:n],
+    loading = vals[ord][1:n]
+  )
+}
+
+#get the loadings for PC of interest, note some have negative values
+top_PC1 <- get_top_genes(loadings, "PC1", 15)
+top_PC2 <- get_top_genes(loadings, "PC2", 15)
+top_PC3 <- get_top_genes(loadings, "PC3", 15)
+
+#Add a column to identify the assosciated PC
+top_PC1$PC <- c("PC1")
+top_PC2$PC <- c("PC2")
+top_PC3$PC <- c("PC3")
+
+#combine them in 1 data frame to annotate
+
+top_loadings <- rbind(top_PC1, top_PC2, top_PC3)
+
+#now annotate these genes (note: need to follow the code in 02_GOseq.R to line 111 to generate the entap_filt)
+
+top_loadings_annot <- top_loadings %>%
+  left_join(entap_filt, by = c("gene" = "Query_Sequence"), relationship = "many-to-many")
+
+#save the csv
+write.csv(top_loadings_annot, "/gpfs/gibbs/project/skelly/yaa23/RNA_seq_RASY/from_scratch_grace2/top_loadings_annot.csv")
