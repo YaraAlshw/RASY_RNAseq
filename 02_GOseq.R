@@ -14,13 +14,14 @@ library(goseq)
 library(dplyr)
 library(stringr)
 library(ashr)
+library(readr)
 
 # PART 1: Calculate gene lengths ----
 
 #calculate gene lengths first from the "merged.ftg" file, this is needed as input for the Goseq analysis
 
 # Load the .gtf file as a data frame
-gtf_file <- "/gpfs/gibbs/project/skelly/yaa23/RNA_seq_RASY/from_scratch_grace2/merged_transcripts2/merged.gtf"  # Replace with the path to your .gtf file
+gtf_file <- "/gpfs/gibbs/project/skelly/yaa23/RNA_seq_RASY/from_scratch_grace2/merged_transcripts2/merged.gtf"  
 gtf_data <- read.table(gtf_file, sep="\t", header=FALSE, stringsAsFactors=FALSE)
 
 # Filter for exons only
@@ -52,11 +53,9 @@ gene_lengths_multi <- exon_data[, c("gene_id", "length")]
 head(gene_lengths)
 
 # remove the extra ";" from the gene_id names
-# Assuming gene_lengths is a named vector
 names(gene_lengths) <- sub(";$", "", names(gene_lengths))
 
 #convert the tibble to a named vector
-# Assuming your tibble is named gene_lengths_tibble
 gene_lengths_vector <- setNames(
   gene_lengths$gene_length,  # Extract the 'gene_length' column
   gene_lengths$gene_id       # Use the 'gene_id' column as the names
@@ -112,15 +111,15 @@ entap_filt$Query_Sequence <- gsub("\\.[0-9]+\\.p1", "", entap_filt$Query_Sequenc
 # Perform a left join, specify many-to-many
 
 #For the new list of 887 deg genes
-master_DEG <- deg_list_12_21 %>%
+master_DEG <- deg_list_12.21 %>%
   left_join(entap_filt, by = c("gene.id" = "Query_Sequence"), relationship = "many-to-many") #1629 rows
 # NOTE: this isn't correct because there are many-to-many relationships for the MSTRG tags and unique genes (descriptions) in the entap file. Plus, within the 887 there are 81 "in common" because some of them are repeated because they were DEG in multiple treatments, e.g. gene MSTRG.10227 was upregulated for both half-freeze and half-thaw. To do this correctly, we can first subset for each condition so we don't lose the "in common" genes between conditions, then map onto the entap file and select the best gene based on percent identical. This solves the issues of having multiple entries for a given MSTRG in the entap file, otherwise we end up with a master_DEG of 1629. We need to use this correct set of DEG for GO analysis and to comment on the expressed genes. Follow these steps:
 
 # Step 1: Subset the data based on the unique conditions in the 'condition' column
-full_freeze_vs_control <- deg_list_12_21 %>% filter(condition == "full_freeze_vs_control")
-half_freeze_vs_control <- deg_list_12_21 %>% filter(condition == "half_freeze_vs_control")
-half_thaw_vs_control <- deg_list_12_21 %>% filter(condition == "half_thaw_vs_control")
-full_thaw_vs_control <- deg_list_12_21 %>% filter(condition == "full_thaw_vs_control")
+full_freeze_vs_control <- deg_list_12.21 %>% filter(condition == "full_freeze_vs_control")
+half_freeze_vs_control <- deg_list_12.21 %>% filter(condition == "half_freeze_vs_control")
+half_thaw_vs_control <- deg_list_12.21 %>% filter(condition == "half_thaw_vs_control")
+full_thaw_vs_control <- deg_list_12.21 %>% filter(condition == "full_thaw_vs_control")
 
 # Step 2: Apply filtering (based on the highest percent_identical) on each subset
 
@@ -305,7 +304,6 @@ filter_top_15_unique <- function(data, condition_col, log2FoldChange_col) {
   return(top_15_per_condition)
 }
 
-# Assuming your data frame is named "master_DEG_annot_noNA_12_21"
 # Apply the function
 top_15_results_unique <- filter_top_15_unique(
   data = master_DEG_annot_noNA_12_21, 
@@ -319,23 +317,27 @@ lapply(names(top_15_results_unique), function(condition_name) {
   write.csv(top_15_results_unique[[condition_name]], output_file, row.names = FALSE)
 })
 
-# Return the list of filtered data frames as output
-top_15_results_unique
 
 # Venn diagram of common genes ----
 # Load necessary library
 install.packages("VennDiagram")
 library(VennDiagram)
 
-deg_list_12_21 <- read.csv("deg_list_12.21.csv") #887 genes
+deg_list_12_21 <- read.csv("/gpfs/gibbs/project/skelly/yaa23/RNA_seq_RASY/from_scratch_grace2/final_output/deg_list_12.21.csv") #887 genes
 
+#subset the up and down regulated genes, need this to make a venn diagram for each 
+deg_up_ven <- subset(deg_list_12_21, regulation == "upregulated")
+deg_down_ven <- subset(deg_list_12_21, regulation == "downregulated")
+  
 # Split the data by condition and extract unique gene IDs for each condition
-gene_lists <- split(deg_list_12_21$gene.id, deg_list_12_21$condition)
+#gene_lists <- split(deg_list_12_21$gene.id, deg_list_12_21$condition)
+gene_lists_up <- split(deg_up_ven$gene.id, deg_up_ven$condition)
+gene_lists_down <- split(deg_down_ven$gene.id, deg_down_ven$condition)
 
 # Create a Venn diagram
 venn <- venn.diagram(
-  x = gene_lists,
-  filename = "venn_diagram_deg.png",  # To save it to a file, replace NULL with "venn_diagram.png"
+  x = gene_lists_up,
+  filename = "venn_diagram_up.png",  # To save it to a file, replace NULL with "venn_diagram.png"
   category.names = c("Full-freeze", "Half-freeze", "Half-thaw", "Full-thaw"),
   fill = c("#21918c", "#440154", "#1F65CC", "#fde725"),  # Adjust colors as needed
   alpha = 0.5,  # Transparency level
@@ -348,16 +350,35 @@ venn <- venn.diagram(
 grid::grid.draw(venn)
 
 # Save the Venn diagram with adjusted dimensions
-output_file <- "venn_diagram_deg.png"
+output_file <- "venn_diagram_up.png"
+png(filename = output_file, width = 800, height = 800, res = 300)  # Set resolution and size
+grid::grid.draw(venn)
+dev.off()
+
+venn <- venn.diagram(
+  x = gene_lists_down,
+  filename = "venn_diagram_down.png",  # To save it to a file, replace NULL with "venn_diagram.png"
+  category.names = c("Full-freeze", "Half-freeze", "Half-thaw", "Full-thaw"),
+  fill = c("#21918c", "#440154", "#1F65CC", "#fde725"),  # Adjust colors as needed
+  alpha = 0.5,  # Transparency level
+  cex = 1.8,  # Font size for set labels
+  cat.cex = 1.5,  # Font size for category names
+  cat.fontfamily = "Arial"
+)
+
+# Display the Venn diagram
+grid::grid.draw(venn)
+
+# Save the Venn diagram with adjusted dimensions
+output_file <- "venn_diagram_down.png"
 png(filename = output_file, width = 800, height = 800, res = 300)  # Set resolution and size
 grid::grid.draw(venn)
 dev.off()
 
 #NOTE: the output doesn't display the category names in the right order, manually edit in external software
 
-##Investigate the genes in common:
+# Investigate the genes in common:
 duplicated(deg_list_12_21$gene.id) #81
-# Assuming deg_list_12_21 is your data frame
 # Subset rows where the 'gene.id' column has duplicated values
 duplicated_genes_df <- deg_list_12_21[duplicated(deg_list_12_21$gene.id) | duplicated(deg_list_12_21$gene.id, fromLast = TRUE), ]
 
@@ -365,9 +386,9 @@ duplicated_genes_df <- deg_list_12_21[duplicated(deg_list_12_21$gene.id) | dupli
 print(duplicated_genes_df)
 
 #MSTRG.6271 #no annotation; upregulated for all, but downregulated for full_thaw
-#MSTRG.28557 XP_040182435.1 XP_040182435.1 transcription factor HES-5-like [Rana temporaria] upregulated for all, but downregulated for ful lfreeze
+#MSTRG.28557 XP_040182435.1 XP_040182435.1 transcription factor HES-5-like [Rana temporaria] upregulated for all, but downregulated for full freeze
 
-### Venn ndiagram for GO ----
+### Venn diagram for GO ----
 master_GO <- read.csv("master_GO_12.23.csv") #663 terms
 
 # Split the data by condition and extract unique gene IDs for each condition
@@ -407,7 +428,7 @@ dev.off()
 
 custom <- read_tsv("/gpfs/gibbs/project/skelly/yaa23/RNA_seq_RASY/from_scratch_grace2/EnTAP/results_dir/final_results/annotated_without_contam_gene_ontology_terms.tsv")
 
-#custom_sub <-  custom %>% dplyr::select(query_sequence, go_id)
+custom_sub <-  custom %>% dplyr::select(query_sequence, go_id)
 #remove the.1.p extra at the end of each query name
 
 custom$query_sequence <- gsub("\\.1\\.p1", "", custom$query_sequence)
@@ -429,6 +450,16 @@ custom_sub <- custom[custom$query_sequence %in% name_vector, ]
 
 #Check
 value_exists <- any(custom_sub$query_sequence == "MSTRG.9986")
+
+##TEST
+all_genes <- rownames(dds_results)
+
+# subset genes that are in the data and gene length vector
+subset_vector <- gene_lengths_vector[names(gene_lengths_vector) %in% all_genes]
+
+# Make sure order matches
+subset_vector <- subset_vector[match(all_genes, names(subset_vector))]
+#END TEST
 
 # Run goseq with the length bias correction
 pwf1_up <- nullp(de_genes1_up, bias.data = subset_vector)
