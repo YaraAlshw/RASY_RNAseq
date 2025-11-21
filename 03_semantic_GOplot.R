@@ -1,4 +1,4 @@
-#03 script for semantic plots
+#03 script for semantic plots using the output from REVIGO
 
 library(ggrepel)
 
@@ -9,7 +9,7 @@ library(ggrepel)
 #condition_full_freeze_vs_control.up-under  34    -none- character (no filter)
 
 # half-thaw up-over, 45 total terms ----
-#note the revgio website converts the adjusted pvaleus to log and stores them in the column "value". Use this to plot the size of the circles
+#note the revigo website converts the adjusted pvaleus to log and stores them in the column "value". Use this to plot the size of the circles
 
 # Combine the data for the three categories into one data frame
 revigo.names <- c("term_ID","description","frequency","plot_X","plot_Y","log_size","value","uniqueness","dispensability");
@@ -142,7 +142,7 @@ ggsave("semantic_half_thaw.pdf", p_faceted, width = 32, height = 8, units = "in"
 
 
 # half-freeze up-over, 7 total terms ----
-#note the revgio website converts the adjusted pvaleus to log and stores them in the column "value". Use this to plot the size of the circles
+#note the revigo website converts the adjusted pvaleus to log and stores them in the column "value". Use this to plot the size of the circles
 
 # Combine the data for the two categories into one data frame
 revigo_data_1 <- rbind(
